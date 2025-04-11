@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # Trigger on version tags like v1.0.0
+
+permissions:
+  contents: write  # Needed to upload release assets
+
+jobs:
+  build:
+    name: Build Binaries
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        os: [linux, windows, macos]
+        include:
+          - os: linux
+            target: x86_64-unknown-linux-gnu
+            ext: ""
+          - os: windows
+            target: x86_64-pc-windows-msvc
+            ext: ".exe"
+          - os: macos
+            target: x86_64-apple-darwin
+            ext: ""
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Compile binary
+        run: |
+          deno compile --target ${{ matrix.target }} \
+            --allow-net --allow-env \
+            -o gh-stale-repos-${{ matrix.os }}${{ matrix.ext }} gh-stale-repos.ts
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: gh-stale-repos-${{ matrix.os }}${{ matrix.ext }}

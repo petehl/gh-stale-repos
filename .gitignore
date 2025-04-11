@@ -1,0 +1,7 @@
+# Deno cache & compiled output
+deno.lock
+*.log
+*.csv
+gh-stale-repos
+gh-stale-repos.exe
+dist/
