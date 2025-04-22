@@ -3,10 +3,10 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'  # Trigger on version tags like v1.0.0
+      - "v*" # Trigger on version tags like v1.0.0
 
 permissions:
-  contents: write  # Needed to upload release assets
+  contents: write # Needed to upload release assets
 
 jobs:
   build:
@@ -38,7 +38,7 @@ jobs:
       - name: Compile binary
         run: |
           deno compile --target ${{ matrix.target }} \
-            --allow-net --allow-env --allow-import \
+            --allow-net --allow-env --allow-import --allow-write \
             -o gh-stale-repos-${{ matrix.os }}${{ matrix.ext }} gh-stale-repos.ts
 
       - name: Upload to Release

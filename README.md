@@ -1,6 +1,7 @@
 # 🧊 gh-stale-repos
 
-A CLI tool to find **stale and low-activity repositories** in a GitHub organization. Built with [Deno](https://deno.land/).
+A CLI tool to find **stale and low-activity repositories** in a GitHub
+organization. Built with [Deno](https://deno.land/).
 
 ---
 
@@ -16,3 +17,4 @@ A CLI tool to find **stale and low-activity repositories** in a GitHub organizat
 
 ```bash
 gh-stale-repos --org my-org-name --token ghp_abc123
+```
