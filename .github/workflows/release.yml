@@ -38,7 +38,7 @@ jobs:
       - name: Compile binary
         run: |
           deno compile --target ${{ matrix.target }} \
-            --allow-net --allow-env --allow-import --allow-write \
+            --allow-net --allow-env --allow-import --allow-write --allow-read \
             -o gh-stale-repos-${{ matrix.os }}${{ matrix.ext }} gh-stale-repos.ts
 
       - name: Upload to Release

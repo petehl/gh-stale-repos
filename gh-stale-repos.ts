@@ -4,10 +4,20 @@ import { Command } from "https://deno.land/x/cliffy@v1.0.0-rc.4/command/mod.ts";
 import { Table } from "https://deno.land/x/cliffy@v1.0.0-rc.4/table/mod.ts";
 import {
   format,
+  isAfter,
   isBefore,
   parseISO,
   subDays,
 } from "https://cdn.skypack.dev/date-fns@v4.1.0";
+
+async function readIgnoreList(filePath: string): Promise<Set<string>> {
+  try {
+    const text = await Deno.readTextFile(filePath);
+    return new Set(text.split("\n").map((line) => line.trim()).filter(Boolean));
+  } catch (_) {
+    return new Set();
+  }
+}
 
 const { options } = await new Command()
   .name("gh-stale-repos")
@@ -33,11 +43,15 @@ const { options } = await new Command()
     "Consider repos stale after this many days",
     { default: 180 },
   )
+  .option(
+    "-i, --ignore <file:string>",
+    "Path to a file listing repos to ignore",
+  )
   .option("--json", "Output as JSON")
   .option("--csv <file:string>", "Write results to a CSV file")
   .parse(Deno.args);
 
-const { org, token, commitThreshold, staleDays } = options;
+const { org, token, commitThreshold, staleDays, ignore } = options;
 
 if (!token) {
   console.error(
@@ -45,9 +59,6 @@ if (!token) {
   );
   Deno.exit(1);
 }
-
-console.log(token);
-
 const API_URL = "https://api.github.com/graphql";
 const cutoffDate = subDays(new Date(), staleDays);
 const headers = {
@@ -62,6 +73,7 @@ query ($org: String!, $cursor: String) {
       nodes {
         name
         pushedAt
+        diskUsage
         defaultBranchRef {
           target {
             ... on Commit {
@@ -93,18 +105,20 @@ query ($org: String!, $cursor: String) {
 
 async function fetchStaleRepos() {
   let cursor: string | null = null;
+  let hasNextPage = true;
   const staleRepos: Array<
     {
       name: string;
       commits: number;
       pushedAt: string;
+      size: string;
       lastCommitDate: string;
       lastCommitAuthor: string;
       lastCommitAuthorEmail: string;
     }
   > = [];
 
-  while (true) {
+  while (hasNextPage) {
     // deno-lint-ignore no-explicit-any
     const res: any = await fetch(API_URL, {
       method: "POST",
@@ -121,7 +135,15 @@ async function fetchStaleRepos() {
     const repos = data.data.organization.repositories;
 
     for (const repo of repos.nodes) {
+      if (ignoreList.has(repo.name)) {
+        console.log(`Ignoring ${repo.name}`);
+        continue;
+      }
       const pushedAt = parseISO(repo.pushedAt);
+      if (isAfter(pushedAt, cutoffDate)) {
+        hasNextPage = false;
+        break;
+      }
       const isStale = isBefore(pushedAt, cutoffDate);
       const history = repo.defaultBranchRef?.target?.history;
       const lastCommitInfo = history?.nodes?.[0];
@@ -141,6 +163,7 @@ async function fetchStaleRepos() {
           name: repo.name,
           pushedAt: format(pushedAt, "yyyy-MM-dd"),
           commits: totalCommits,
+          size: `${repo.diskUsage} kB`,
           lastCommitDate: format(
             new Date(lastCommitDate),
             "yyyy-MM-dd",
@@ -151,8 +174,10 @@ async function fetchStaleRepos() {
       }
     }
 
-    if (!repos.pageInfo.hasNextPage) break;
-    cursor = repos.pageInfo.endCursor;
+    if (hasNextPage) {
+      cursor = repos.pageInfo.endCursor;
+      hasNextPage = repos.pageInfo.hasNextPage;
+    }
   }
 
   return staleRepos;
@@ -161,6 +186,7 @@ async function fetchStaleRepos() {
 console.log(
   `🔍 Scanning "${org}" for repos not updated in ${staleDays} days with < ${commitThreshold} commits...\n`,
 );
+const ignoreList = ignore ? await readIgnoreList(ignore) : new Set();
 const results = await fetchStaleRepos();
 
 if (results.length === 0) {
@@ -168,29 +194,41 @@ if (results.length === 0) {
   Deno.exit(0);
 }
 
-if (results.length === 0) {
-  console.log("✅ No stale, low-activity repos found!");
-}
+console.log(`📦 Found ${results.length} stale, low-activity repos:\n`);
 
 if (options.json) {
   console.log(JSON.stringify(results, null, 2));
 } else if (options.csv) {
   const file = options.csv;
-  const lines = ["Repo,Commits,Last Updated,Last Commit,Author,Author Email"];
+  const lines = [
+    "Repo,Commits,Size in kB,Last Updated,Last Commit,Author,Author Email",
+  ];
   for (const r of results) {
     lines.push(
-      `${r.name},${r.commits},${r.pushedAt},${r.lastCommitDate},${r.lastCommitAuthor},${r.lastCommitAuthorEmail}`,
+      `${r.name},${r.commits},${r.size},${r.pushedAt},${r.lastCommitDate},${r.lastCommitAuthor},${r.lastCommitAuthorEmail}`,
     );
   }
   await Deno.writeTextFile(options.csv, lines.join("\n"));
   console.log(`📄 CSV saved to ${file}`);
 } else {
   new Table()
-    .header(["Repo", "Commits", "Last Pushed"])
+    .header([
+      "Repo",
+      "Commits",
+      "Size in kB",
+      "Last Updated",
+      "Last Commit",
+      "Author",
+      "Email",
+    ])
     .body(results.map((r) => [
       `\x1b[36m${r.name}\x1b[0m`,
       r.commits,
+      r.size,
       r.pushedAt,
+      r.lastCommitDate,
+      r.lastCommitAuthor,
+      r.lastCommitAuthorEmail,
     ]))
     .border()
     .render();

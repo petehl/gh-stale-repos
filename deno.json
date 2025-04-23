@@ -1,0 +1,7 @@
+{
+  "tasks": {
+    "start": "deno run -A gh-stale-repos.ts",
+    "build": "deno compile --allow-net --allow-env --allow-write --allow-import --allow-read  -o gh-stale-repos gh-stale-repos.ts ",
+    "check": "deno check -A gh-stale-repos.ts"
+  }
+}
