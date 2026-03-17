@@ -4,4 +4,5 @@ deno.lock
 *.csv
 gh-stale-repos
 gh-stale-repos.exe
+ignorelist
 dist/

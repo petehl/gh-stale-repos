@@ -66,6 +66,32 @@ const headers = {
   "Content-Type": "application/json",
 };
 
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+const MAX_RETRIES = 5;
+
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit,
+): Promise<Response> {
+  let delay = 1000;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const res = await fetch(url, init);
+    if (res.ok || !RETRYABLE_STATUS.has(res.status)) return res;
+    const body = await res.text();
+    if (attempt === MAX_RETRIES) {
+      console.error(`❌ GitHub API error after ${MAX_RETRIES} retries:`, body);
+      Deno.exit(1);
+    }
+    console.error(
+      `⚠️  GitHub API ${res.status} (attempt ${attempt + 1}/${MAX_RETRIES}), retrying in ${delay / 1000}s...`,
+    );
+    await new Promise((r) => setTimeout(r, delay));
+    delay *= 2;
+  }
+  // unreachable
+  Deno.exit(1);
+}
+
 const query = `
 query ($org: String!, $cursor: String) {
   organization(login: $org) {
@@ -120,16 +146,11 @@ async function fetchStaleRepos() {
 
   while (hasNextPage) {
     // deno-lint-ignore no-explicit-any
-    const res: any = await fetch(API_URL, {
+    const res: any = await fetchWithRetry(API_URL, {
       method: "POST",
       headers,
       body: JSON.stringify({ query, variables: { org, cursor } }),
     });
-
-    if (!res.ok) {
-      console.error("❌ GitHub API error:", await res.text());
-      Deno.exit(1);
-    }
 
     const data = await res.json();
     const repos = data.data.organization.repositories;
